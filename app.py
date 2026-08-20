@@ -169,6 +169,17 @@ class DownloaderApp(ctk.CTk):
     def _open_downloads(self):
         os.startfile(DOWNLOADS_FOLDER)
 
+    def _build_dest_row(self, tab):
+        row = ctk.CTkFrame(tab, fg_color="transparent")
+        row.pack(anchor="w", padx=14, pady=(4, 0))
+        ctk.CTkLabel(row, text=f"📁  Salvando em:  {DOWNLOADS_FOLDER}",
+                     text_color="#888888", font=ctk.CTkFont(size=10)).pack(side="left")
+        ctk.CTkButton(row, text="↗", width=24, height=22,
+                      fg_color="transparent", hover_color="#2a2a4e",
+                      border_width=1, border_color="#555577", text_color="#aaaacc",
+                      font=ctk.CTkFont(size=12, weight="bold"),
+                      command=self._open_downloads).pack(side="left", padx=6)
+
     def _log(self, box, msg):
         box.configure(state="normal")
         box.insert("end", msg + "\n")
@@ -420,6 +431,8 @@ class DownloaderApp(ctk.CTk):
         self.yt_status = ctk.CTkLabel(tab, text="Cole um link e clique em Analisar.",
                                        text_color="#888888", font=ctk.CTkFont(size=11))
         self.yt_status.pack(anchor="w", padx=14)
+
+        self._build_dest_row(tab)
 
         self.yt_log = ctk.CTkTextbox(tab, width=720, height=130,
                                       font=ctk.CTkFont(size=10, family="Consolas"))
@@ -848,6 +861,8 @@ class DownloaderApp(ctk.CTk):
                                         text_color="#888888", font=ctk.CTkFont(size=11))
         self.ytm_status.pack(anchor="w", padx=14)
 
+        self._build_dest_row(tab)
+
         self.ytm_log = ctk.CTkTextbox(tab, width=720, height=155,
                                        font=ctk.CTkFont(size=10, family="Consolas"))
         self.ytm_log.pack(padx=12, pady=6)
@@ -1104,6 +1119,8 @@ class DownloaderApp(ctk.CTk):
 
         self.sp_status = ctk.CTkLabel(tab, text="Pronto.", text_color="#888888", font=ctk.CTkFont(size=11))
         self.sp_status.pack(anchor="w", padx=14)
+
+        self._build_dest_row(tab)
 
         self.sp_log = ctk.CTkTextbox(tab, width=720, height=280,
                                       font=ctk.CTkFont(size=10, family="Consolas"))

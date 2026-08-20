@@ -4,7 +4,7 @@
 ; ============================================================
 
 #define AppName      "Mota's Downloader"
-#define AppVersion   "1.0.0"
+#define AppVersion   "1.1.0"
 #define AppPublisher "Tarcísio Mota"
 #define AppURL       "https://github.com/tarcisiomota/MotasDownloader"
 #define AppExeName   "MediaDownloader.exe"

@@ -1,0 +1,50 @@
+MOTA'S DOWNLOADER - LICENÇA DE USO
+====================================
+
+Copyright (c) 2025 Tarcísio Mota
+https://github.com/tarcisiomota/MotasDownloader
+
+
+USO PESSOAL
+-----------
+Este software é disponibilizado gratuitamente para uso pessoal e não-comercial.
+Você pode instalar, usar e distribuir este software livremente, desde que
+não seja para fins comerciais.
+
+
+USO COMERCIAL PROIBIDO
+-----------------------
+É expressamente proibido o uso deste software, total ou parcialmente,
+para qualquer finalidade comercial — incluindo, mas não se limitando a:
+
+  - Venda do software ou de conteúdo baixado através dele
+  - Uso em serviços pagos ou por assinatura
+  - Integração em produtos comerciais
+  - Uso por empresas para fins de lucro
+
+Quem descumprir essa cláusula estará sujeito às consequências naturais
+do karma, da justiça divina, e de uma eventual visita do capeta.
+Você foi avisado. 😈
+
+
+ISENÇÃO DE RESPONSABILIDADE
+-----------------------------
+Este software é fornecido "como está", sem garantias de qualquer tipo.
+O autor não se responsabiliza por qualquer dano direto ou indireto
+resultante do uso deste software.
+
+O usuário é responsável por garantir que o download de conteúdo via
+este software respeita os direitos autorais e os Termos de Serviço
+das plataformas utilizadas (YouTube, Spotify, etc.).
+
+
+TECNOLOGIAS DE TERCEIROS
+--------------------------
+Este software utiliza os seguintes componentes de código aberto:
+  - yt-dlp      (Unlicense)
+  - spotdl      (MIT License)
+  - CustomTkinter (MIT License)
+  - FFmpeg      (LGPL / GPL)
+
+Consulte os respectivos repositórios para mais informações sobre
+as licenças de cada componente.

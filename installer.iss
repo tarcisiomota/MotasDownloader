@@ -1,58 +1,146 @@
-; ── Inno Setup Script ────────────────────────────────────────────────────────
-; Requer Inno Setup 6+ em C:\Program Files (x86)\Inno Setup 6\ISCC.exe
-; Para compilar: rode build_installer.bat  (ou abra este .iss no Inno Setup IDE)
+; ============================================================
+;  Mota's Downloader — Inno Setup Script
+;  Requer Inno Setup 6+ com pacote de idioma pt-BR
+; ============================================================
 
 #define AppName      "Mota's Downloader"
 #define AppVersion   "1.0.0"
-#define AppPublisher "Mota's Downloader"
+#define AppPublisher "Tarcísio Mota"
+#define AppURL       "https://github.com/tarcisiomota/MotasDownloader"
 #define AppExeName   "MediaDownloader.exe"
 #define SourceDir    "dist\MediaDownloader"
 
 [Setup]
-AppId={{A3F8B2C1-4D5E-6F7A-8B9C-0D1E2F3A4B5C}
+AppId={{E4A7B3C2-5D6E-7F8A-9B0C-1D2E3F4A5B6C}
 AppName={#AppName}
 AppVersion={#AppVersion}
+AppVerName={#AppName} {#AppVersion}
 AppPublisher={#AppPublisher}
-DefaultDirName={autopf}\Motas Downloader
+AppPublisherURL={#AppURL}
+AppSupportURL={#AppURL}/issues
+AppUpdatesURL={#AppURL}/releases
+
+; Destino padrão: Arquivos de Programas do usuário (sem precisar de admin)
+DefaultDirName={autopf}\MotasDownloader
 DefaultGroupName={#AppName}
+AllowNoIcons=yes
+
+; Licença exibida na segunda tela do wizard
+LicenseFile=LICENSE.txt
+
+; Saída
 OutputDir=installer_output
-OutputBaseFilename=MediaDownloader_Setup_v{#AppVersion}
+OutputBaseFilename=MotasDownloader_Setup_v{#AppVersion}
 SetupIconFile=assets\icon.ico
 UninstallDisplayIcon={app}\{#AppExeName}
+UninstallDisplayName={#AppName}
+
+; Compressão máxima (LZMA2 ultra)
 Compression=lzma2/ultra64
 SolidCompression=yes
+
+; Visual moderno
 WizardStyle=modern
-DisableProgramGroupPage=yes
+WizardSizePercent=120
+
+; Permite rodar sem privilégios de administrador (instala por usuário)
+; Mas oferece opção de instalar para todos se rodar como admin
 PrivilegesRequired=lowest
+PrivilegesRequiredOverridesAllowed=dialog
+
+; Somente 64 bits
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 
-; Wizard visual
-WizardSmallImageFile=assets\wizard_small.bmp
+; Versão mínima do Windows: 10
+MinVersion=10.0
+
+; Imagens do wizard (geradas pelo build_installer.bat)
 WizardImageFile=assets\wizard_banner.bmp
+WizardSmallImageFile=assets\wizard_small.bmp
 
 [Languages]
 Name: "brazilianportuguese"; MessagesFile: "compiler:Languages\BrazilianPortuguese.isl"
 
+[CustomMessages]
+brazilianportuguese.WelcomeLabel1=Bem-vindo ao assistente de instalação do {#AppName}
+brazilianportuguese.WelcomeLabel2=Este assistente irá guiá-lo pela instalação do {#AppName} {#AppVersion}.%n%nFecha outros aplicativos antes de continuar.%n%nClique em Avançar para continuar.
+brazilianportuguese.FinishedLabel=A instalação do {#AppName} foi concluída com sucesso.%n%nClique em Concluir para fechar este assistente.
+
 [Tasks]
-Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
+; Atalho na área de trabalho (selecionado por padrão)
+Name: "desktopicon"; \
+  Description: "Criar atalho na Área de Trabalho"; \
+  GroupDescription: "Atalhos adicionais:"; \
+  Flags: checkedonce
+
+; Executar ao iniciar o Windows (não selecionado por padrão)
+Name: "startupicon"; \
+  Description: "Iniciar automaticamente com o Windows"; \
+  GroupDescription: "Atalhos adicionais:"; \
+  Flags: unchecked
 
 [Files]
-Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+; Todos os arquivos do build PyInstaller
+Source: "{#SourceDir}\*"; \
+  DestDir: "{app}"; \
+  Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{autoprograms}\{#AppName}"; Filename: "{app}\{#AppExeName}"
-Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExeName}"; Tasks: desktopicon
+; Menu Iniciar
+Name: "{group}\{#AppName}"; \
+  Filename: "{app}\{#AppExeName}"; \
+  IconFilename: "{app}\{#AppExeName}"
+
+Name: "{group}\Desinstalar {#AppName}"; \
+  Filename: "{uninstallexe}"
+
+; Área de trabalho (só se a task foi marcada)
+Name: "{autodesktop}\{#AppName}"; \
+  Filename: "{app}\{#AppExeName}"; \
+  IconFilename: "{app}\{#AppExeName}"; \
+  Tasks: desktopicon
+
+; Inicialização do Windows (só se a task foi marcada)
+Name: "{autostartup}\{#AppName}"; \
+  Filename: "{app}\{#AppExeName}"; \
+  Tasks: startupicon
+
+[Registry]
+; Registra no "Adicionar ou Remover Programas"
+Root: HKA; Subkey: "Software\{#AppPublisher}\{#AppName}"; \
+  ValueType: string; ValueName: "InstallPath"; \
+  ValueData: "{app}"; Flags: uninsdeletekey
+
+Root: HKA; Subkey: "Software\{#AppPublisher}\{#AppName}"; \
+  ValueType: string; ValueName: "Version"; \
+  ValueData: "{#AppVersion}"; Flags: uninsdeletekey
 
 [Run]
-Filename: "{app}\{#AppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(AppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
+; Oferece abrir o app ao clicar em Concluir
+Filename: "{app}\{#AppExeName}"; \
+  Description: "Iniciar {#AppName} agora"; \
+  Flags: nowait postinstall skipifsilent unchecked
 
 [UninstallRun]
-Filename: "{cmd}"; Parameters: "/c taskkill /f /im {#AppExeName}"; Flags: runhidden; RunOnceId: "KillApp"
+; Fecha o app antes de desinstalar
+Filename: "{cmd}"; \
+  Parameters: "/c taskkill /f /im {#AppExeName} 2>nul"; \
+  Flags: runhidden; \
+  RunOnceId: "KillBeforeUninstall"
+
+[UninstallDelete]
+; Remove pasta inteira ao desinstalar
+Type: filesandordirs; Name: "{app}"
 
 [Code]
-// Verifica se ja existe versao instalada antes de continuar
+// Verifica se o app já está rodando antes de instalar
 function InitializeSetup(): Boolean;
+var
+  ResultCode: Integer;
 begin
+  // Tenta fechar instância anterior
+  Exec(ExpandConstant('{cmd}'), '/c taskkill /f /im {#AppExeName} 2>nul',
+       '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   Result := True;
 end;

@@ -38,8 +38,10 @@ if not exist installer_output mkdir installer_output
 
 :: Localiza o Inno Setup
 set ISCC=
-if exist "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" set ISCC="C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
-if exist "C:\Program Files\Inno Setup 6\ISCC.exe"       set ISCC="C:\Program Files\Inno Setup 6\ISCC.exe"
+if exist "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"                set ISCC="C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+if exist "C:\Program Files\Inno Setup 6\ISCC.exe"                      set ISCC="C:\Program Files\Inno Setup 6\ISCC.exe"
+if exist "%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe"               set ISCC="%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe"
+if exist "%USERPROFILE%\AppData\Local\Programs\Inno Setup 6\ISCC.exe"  set ISCC="%USERPROFILE%\AppData\Local\Programs\Inno Setup 6\ISCC.exe"
 
 if "%ISCC%"=="" (
     echo.

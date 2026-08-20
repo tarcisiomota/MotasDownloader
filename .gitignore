@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+*.pyo
+build/
+dist/
+*.spec
+assets/wizard_*.bmp
+installer_output/
+bin/ffmpeg.exe
+bin/ffprobe.exe
+bin/_ffmpeg_dl.zip
+bin/ffmpeg_tmp/
+screenshot*.png
+ss_*.png
+.env

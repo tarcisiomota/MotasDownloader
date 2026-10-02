@@ -1,4 +1,5 @@
 import customtkinter as ctk
+import tkinter as tk
 import threading
 import yt_dlp
 import subprocess
@@ -9,11 +10,20 @@ import urllib.request
 import zipfile
 import tempfile
 from pathlib import Path
+from audio_options import audio_options, audio_selector, combined_selector, audio_suffix
+from subtitles import subtitle_choices, SIZES
+from music_metadata import MusicMetadataPP
+from clip_media import ClipMediaPP, clock, validate_range
+from yt_dlp.postprocessor.ffmpeg import FFmpegExtractAudioPP
 
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
 
 DOWNLOADS_FOLDER = str(Path.home() / "Downloads")
+INACTIVE_TEXT = ("#808080", "#888888")
+INACTIVE_TITLE = ("#666666", "#b8b8b8")
+INACTIVE_MENU = ("#979da2", "#4a4a4a")
+SUCCESS_TEXT = ("#16733b", "#2ecc71")
 HEADER_DARK  = "#1a1a2e"
 HEADER_LIGHT = "#dde3f0"
 
@@ -83,7 +93,7 @@ class DownloaderApp(ctk.CTk):
     def __init__(self):
         super().__init__()
         self.title("Mota's Downloader")
-        self.geometry("760x680")
+        self.geometry("760x760")
         self.resizable(False, False)
         self._is_dark = True
 
@@ -160,6 +170,9 @@ class DownloaderApp(ctk.CTk):
                                       border_color="#9999bb", text_color="#333355")
             self._folder_btn.configure(hover_color="#c0c8de", text_color="#444466")
 
+        if hasattr(self, "cut_check"):
+            self._refresh_cut()
+
     @property
     def _fg_text(self):
         return "#111111" if not self._is_dark else "#ffffff"
@@ -186,9 +199,30 @@ class DownloaderApp(ctk.CTk):
         box.see("end")
         box.configure(state="disabled")
 
+    def _install_paste_menu(self, entry):
+        # Tk Menu uses the native Windows popup style.
+        menu = tk.Menu(entry, tearoff=False)
+        def paste():
+            if entry.cget("state") != "disabled":
+                entry.focus_set()
+                entry._entry.event_generate("<<Paste>>")
+        menu.add_command(label="Colar", command=paste)
+        def popup(event):
+            menu.entryconfigure(0, state="disabled" if entry.cget("state") == "disabled" else "normal")
+            entry.focus_set()
+            try:
+                menu.tk_popup(event.x_root, event.y_root)
+            finally:
+                menu.grab_release()
+            return "break"
+        entry.bind("<Button-3>", popup, add=True)
+        entry._paste_menu = menu
+
     def _set_status(self, label, text, color="active"):
         if color == "active":
             color = self._fg_text
+        if color == "#2ecc71":
+            color = SUCCESS_TEXT
         label.configure(text=text, text_color=color)
 
     def _show_help(self):
@@ -239,7 +273,15 @@ class DownloaderApp(ctk.CTk):
         line("• Só Vídeo → apenas a imagem, sem áudio", 1)
         line("• Só Áudio → MP3 extraído do vídeo", 1)
         line("4. Selecione a Resolução e a Qualidade de áudio nos dropdowns.")
-        line("5. Clique em ⬇ Baixar.")
+        line("5. Opcional: marque Recortar trecho e informe Início e Fim (00:00:00).")
+        line("6. Clique em Baixar. O arquivo inteiro é baixado antes do recorte preciso.")
+        line("Recorte: apenas vídeos individuais; o vídeo é recodificado para H.264/MP4.")
+        line("Legendas: marque Gravar legendas no vídeo e escolha idioma, tamanho e cor.")
+        line("Português tem prioridade, preferindo legendas do autor. O contorno é preto.")
+        line("As legendas ficam permanentes na imagem e exigem recodificação do vídeo.")
+        line("🎵 Só Áudio: incorpora automaticamente nome, artista, álbum, ano e imagem.")
+        line("Usa dados do link e campos explícitos da descrição; sem IA ou busca externa.")
+        line("Artista, álbum e ano ficam vazios se não houver informação confiável.")
         line("")
         line("📋 Playlist: ao colar um link de playlist, o app detecta automaticamente,")
         line("mostra o número de vídeos e baixa todos na pasta Downloads/Nome-da-Playlist/.")
@@ -254,6 +296,8 @@ class DownloaderApp(ctk.CTk):
         line("• Bitrate → qualidade do arquivo de saída (320k, 256k…)", 1)
         line("• Metadados → incorpora título, artista e álbum no arquivo", 1)
         line("• Capa do álbum → embute a imagem da capa no arquivo de áudio", 1)
+        line("A imagem vem do próprio link; usa a miniatura quando não há capa disponível.")
+        line("O ano é o lançamento informado, não a data de postagem do vídeo.")
         line("4. Clique em ⬇ Baixar.")
         line("")
         line("📋 Playlist: detectada automaticamente. Cria pasta com o nome da playlist.")
@@ -270,7 +314,7 @@ class DownloaderApp(ctk.CTk):
 
         # ── Geral ─────────────────────────────────────────────────────────
         section("⚙  Geral", "#888888")
-        line("📁  Downloads — abre a pasta de destino (padrão: C:/Users/.../Downloads).")
+        line("📁  Downloads — abre a pasta de destino (padrão: Downloads, dentro da pasta do programa).")
         line("☀ / 🌙  — alterna entre tema claro e escuro.")
         line("✓ ffmpeg OK — componente necessário para HD, MP3 e mesclagem de streams.")
         line("⬇ Instalar ffmpeg — aparece se o ffmpeg não for encontrado;")
@@ -337,7 +381,7 @@ class DownloaderApp(ctk.CTk):
                     self.yt_status, "✓ ffmpeg instalado! Analise novamente.", "#2ecc71"))
             except Exception as exc:
                 self.after(0, lambda: win.destroy())
-                self.after(0, lambda: self._set_status(
+                self.after(0, lambda exc=exc: self._set_status(
                     self.yt_status, f"✗ Erro ao instalar ffmpeg: {exc}", "#e74c3c"))
                 self.after(100, self._refresh_ffmpeg_badge)
 
@@ -359,6 +403,7 @@ class DownloaderApp(ctk.CTk):
             url_row, height=36,
             placeholder_text="https://www.youtube.com/watch?v=...",
         )
+        self._install_paste_menu(self.yt_url)
         self.yt_url.pack(side="left", fill="x", expand=True, padx=(0, 8))
         self.yt_url.bind("<Return>", lambda _: self._start_analyze())
 
@@ -402,14 +447,72 @@ class DownloaderApp(ctk.CTk):
         self._vq_frame = ctk.CTkFrame(self._yt_qual_row, fg_color="transparent")
         self._vq_frame.pack(side="left", padx=(0, 20))
         ctk.CTkLabel(self._vq_frame, text="Resolução:").pack(side="left", padx=(0, 6))
-        self.yt_vq = ctk.CTkOptionMenu(self._vq_frame, values=["—"], width=200)
+        self.yt_vq = ctk.CTkOptionMenu(self._vq_frame, values=["—"], width=145)
         self.yt_vq.pack(side="left")
 
         self._aq_frame = ctk.CTkFrame(self._yt_qual_row, fg_color="transparent")
         self._aq_frame.pack(side="left")
         ctk.CTkLabel(self._aq_frame, text="Qualidade áudio:").pack(side="left", padx=(0, 6))
-        self.yt_aq = ctk.CTkOptionMenu(self._aq_frame, values=["—"], width=180)
+        self.yt_aq = ctk.CTkOptionMenu(self._aq_frame, values=["—"], width=315, font=ctk.CTkFont(size=11))
         self.yt_aq.pack(side="left")
+
+        self._yt_busy = False
+        self._yt_analyzed_url = None
+        self._cut_duration = None
+        self.cut_enabled = ctk.BooleanVar(value=False)
+        self.cut_start = ctk.StringVar(value="00:00:00")
+        self.cut_end = ctk.StringVar(value="00:00:00")
+        cut_row = ctk.CTkFrame(self._yt_opts_frame, fg_color="transparent")
+        cut_row.pack(fill="x", pady=(12, 0))
+        self.cut_check = ctk.CTkCheckBox(cut_row, text="Recortar trecho", width=140,
+            variable=self.cut_enabled, command=self._refresh_cut)
+        self._cut_title_color = self.cut_check.cget("text_color")
+        self.cut_check.pack(side="left", padx=(0, 12))
+        self.cut_labels, self.cut_entries = [], []
+        for label, variable in (("Início", self.cut_start), ("Fim", self.cut_end)):
+            widget = ctk.CTkLabel(cut_row, text=label)
+            widget.pack(side="left", padx=(0, 6))
+            self.cut_labels.append(widget)
+            entry = ctk.CTkEntry(cut_row, width=90, textvariable=variable, justify="center")
+            entry.pack(side="left", padx=(0, 14))
+            self.cut_entries.append(entry)
+        self.cut_summary = ctk.CTkLabel(cut_row, text="", font=ctk.CTkFont(size=11))
+        self.cut_summary.pack(side="right")
+        self.cut_hint = ctk.CTkLabel(self._yt_opts_frame, text="", anchor="w",
+            font=ctk.CTkFont(size=11), wraplength=690)
+        self.cut_hint.pack(fill="x", pady=(3, 0))
+        self.cut_start.trace_add("write", lambda *_: self._refresh_cut())
+        self.cut_end.trace_add("write", lambda *_: self._refresh_cut())
+
+        self.sub_enabled = ctk.BooleanVar(value=False)
+        self._sub_choices = {}
+        subrow = ctk.CTkFrame(self._yt_opts_frame, fg_color="transparent")
+        subrow.pack(fill="x", pady=(8, 0))
+        self.sub_check = ctk.CTkCheckBox(subrow, text="Gravar legendas no vídeo",
+            variable=self.sub_enabled, command=self._refresh_subtitles)
+        self._sub_title_color = self.sub_check.cget("text_color")
+        self.sub_check.pack(side="left", padx=(0, 12))
+        self.sub_lang = ctk.CTkOptionMenu(subrow, values=["Sem legendas"], width=420)
+        self.sub_lang.pack(side="left")
+        style = ctk.CTkFrame(self._yt_opts_frame, fg_color="transparent")
+        style.pack(fill="x", pady=(5, 0))
+        self.sub_size_label = ctk.CTkLabel(style, text="Tamanho:")
+        self.sub_size_label.pack(side="left", padx=(0, 6))
+        self.sub_size = ctk.CTkOptionMenu(style, values=list(SIZES), width=140)
+        self.sub_size.pack(side="left", padx=(0, 18))
+        self.sub_color_label = ctk.CTkLabel(style, text="Cor:")
+        self.sub_color_label.pack(side="left", padx=(0, 6))
+        self.sub_color = ctk.CTkOptionMenu(style, values=["Branca", "Amarela"], width=120)
+        self.sub_color.pack(side="left")
+        self.sub_hint = ctk.CTkLabel(self._yt_opts_frame, text="", anchor="w",
+            font=ctk.CTkFont(size=11), wraplength=690)
+        self.sub_hint.pack(fill="x")
+        self._sub_menu_colors = {widget: {key: widget.cget(key) for key in
+            ('fg_color', 'button_color', 'button_hover_color')} for widget in
+            (self.sub_lang, self.sub_size, self.sub_color)}
+        self._sub_label_colors = {widget: widget.cget('text_color') for widget in
+            (self.sub_size_label, self.sub_color_label, self.sub_hint)}
+        self._refresh_subtitles()
 
         # Estado inicial: opções desabilitadas até analisar
         self._yt_opts_frame.pack_forget()
@@ -439,6 +542,86 @@ class DownloaderApp(ctk.CTk):
         self.yt_log.pack(padx=12, pady=6)
         self.yt_log.configure(state="disabled")
 
+    def _refresh_subtitles(self):
+        if not hasattr(self, 'sub_check'):
+            return
+        live = (self._yt_info or {}).get('is_live') or (self._yt_info or {}).get('live_status') == 'is_upcoming'
+        available = bool(self._sub_choices) and not self._yt_is_playlist and not live and self.yt_type.get() != 'Só Áudio' and has_ffmpeg()
+        if not available:
+            self.sub_enabled.set(False)
+        self.sub_check.configure(state='normal' if available and not self._yt_busy else 'disabled')
+        active = available and self.sub_enabled.get() and not self._yt_busy
+        self.sub_check.configure(text_color=self._sub_title_color if active else INACTIVE_TITLE,
+            text_color_disabled=INACTIVE_TITLE)
+        for widget, original in self._sub_label_colors.items():
+            widget.configure(text_color=original if active else INACTIVE_TEXT)
+        for widget in (self.sub_lang, self.sub_size, self.sub_color):
+            widget.configure(**(self._sub_menu_colors[widget] if active else
+                dict(fg_color=INACTIVE_MENU, button_color=INACTIVE_MENU, button_hover_color=INACTIVE_MENU)))
+            widget.configure(text_color_disabled=INACTIVE_TEXT)
+            widget.configure(state='normal' if active else 'disabled',
+                text_color=('#202124','#eeeeee') if active else ('#808080','#888888'))
+        if live:
+            hint = 'Legendas gravadas disponíveis após o encerramento da transmissão.'
+        elif self._yt_is_playlist:
+            hint = 'Legendas gravadas disponíveis para vídeos individuais.'
+        elif self.yt_type.get() == 'Só Áudio':
+            hint = 'Escolha um tipo com vídeo para gravar legendas.'
+        elif not self._sub_choices:
+            hint = 'Nenhuma legenda compatível encontrada neste vídeo.'
+        elif not any(c['code'].lower().split('-')[0]=='pt' for c in self._sub_choices.values()):
+            hint = 'Português indisponível. Escolha outro idioma. A legenda será permanente.'
+        else:
+            hint = ''
+        self.sub_hint.configure(text=hint)
+        if hint:
+            self.sub_hint.pack(fill="x")
+        else:
+            self.sub_hint.pack_forget()
+
+    def _refresh_cut(self):
+        self._refresh_subtitles()
+        available = self._cut_duration is not None and not self._yt_is_playlist and has_ffmpeg()
+        busy = self._yt_busy
+        self.cut_check.configure(state="normal" if available and not busy else "disabled")
+        enabled = available and self.cut_enabled.get()
+        self.cut_check.configure(text_color=self._cut_title_color if enabled and not busy else INACTIVE_TITLE,
+            text_color_disabled=INACTIVE_TITLE)
+        color = ("#202124", "#eeeeee") if enabled and not busy else INACTIVE_TEXT
+        for label in self.cut_labels:
+            label.configure(text_color=color)
+        for entry in self.cut_entries:
+            entry.configure(state="normal" if enabled and not busy else "disabled", text_color=color)
+        error = None
+        if not available:
+            hint = "Recorte disponível para vídeos individuais com duração definida e FFmpeg."
+            summary = ""
+        elif enabled:
+            try:
+                a,b = validate_range(self.cut_start.get(), self.cut_end.get(), self._cut_duration)
+                summary = "Trecho · " + clock(b-a)
+                hint = "O arquivo inteiro será baixado; depois, o trecho será recortado."
+            except ValueError as exc:
+                error = str(exc)
+                summary, hint = "Trecho inválido", error
+        else:
+            summary = "Inteiro · " + clock(self._cut_duration)
+            hint = "Use horas:minutos:segundos. O fim recebe a duração do vídeo."
+        self.cut_summary.configure(text=summary, text_color=("#62656b", "#a0a2a9") if enabled and not busy else INACTIVE_TEXT)
+        self.cut_hint.configure(text=hint, text_color=("#aa2222", "#ff9992") if error else (("#62656b", "#a0a2a9") if enabled and not busy else INACTIVE_TEXT))
+        if hasattr(self, "yt_btn") and not busy:
+            self.yt_btn.configure(text="⬇   Baixar trecho" if enabled else "⬇   Baixar",
+                state="normal" if self._yt_info is not None and not error else "disabled")
+
+    def _finish_yt_download(self):
+        self._yt_busy = False
+        self.yt_url.configure(state="normal")
+        self.yt_analyze_btn.configure(state="normal")
+        self.yt_type.configure(state="normal")
+        self.yt_vq.configure(state="normal")
+        self.yt_aq.configure(state="normal")
+        self._refresh_cut()
+
     # ── Análise ────────────────────────────────────────────────────────────
 
     def _start_analyze(self):
@@ -447,6 +630,11 @@ class DownloaderApp(ctk.CTk):
             self._set_status(self.yt_status, "⚠  Cole um link válido.", "orange")
             return
 
+        self._yt_analyzed_url = None
+        self._yt_analyzing_url = url
+        self._cut_duration = None
+        self.cut_enabled.set(False)
+        self.yt_url.configure(state="disabled")
         self.yt_analyze_btn.configure(state="disabled", text="Analisando…")
         self.yt_btn.configure(state="disabled")
         self._yt_opts_frame.pack_forget()
@@ -540,7 +728,7 @@ class DownloaderApp(ctk.CTk):
 
                 self._yt_video_opts = {k: video_opts[k] for k in sorted(video_opts, key=sort_lbl, reverse=True)}
                 self._yt_combo_opts = {k: combo_opts[k] for k in sorted(combo_opts, key=sort_lbl, reverse=True)}
-                self._yt_audio_opts = {k: audio_opts[k] for k in sorted(audio_opts, key=sort_lbl, reverse=True)}
+                self._yt_audio_opts = audio_options(formats)
 
                 title    = info.get("title", "")
                 duration = info.get("duration_string", "")
@@ -550,9 +738,26 @@ class DownloaderApp(ctk.CTk):
                     title, uploader, duration))
 
         except Exception as exc:
-            self.after(0, lambda: self._analyze_error(str(exc)))
+            self.after(0, lambda message=str(exc): self._analyze_error(message))
 
     def _update_ui_after_analyze(self, title, uploader, duration, count=0):
+        self.yt_url.configure(state="normal")
+        self._yt_analyzed_url = self._yt_analyzing_url
+        choices = subtitle_choices(self._yt_info or {}) if not self._yt_is_playlist else []
+        self._sub_choices = {c['label']:c for c in choices}
+        self.sub_enabled.set(False)
+        self.sub_lang.configure(values=list(self._sub_choices) or ['Sem legendas'])
+        self.sub_lang.set(next(iter(self._sub_choices), 'Sem legendas'))
+        info = self._yt_info or {}
+        duration_seconds = info.get("duration")
+        import math
+        self._cut_duration = (duration_seconds if not self._yt_is_playlist
+            and not info.get("is_live") and info.get("live_status") != "is_upcoming"
+            and isinstance(duration_seconds, (float, int)) and math.isfinite(duration_seconds)
+            and duration_seconds >= 1 else None)
+        self.cut_enabled.set(False)
+        self.cut_start.set("00:00:00")
+        self.cut_end.set(clock(self._cut_duration or 0))
         self.yt_analyze_btn.configure(state="normal", text="🔍  Analisar")
 
         if count:
@@ -569,17 +774,20 @@ class DownloaderApp(ctk.CTk):
                 info_text += f"  ({duration})"
             self._yt_title_label.configure(text=info_text, text_color="#aaaaaa")
 
+        self.yt_aq.set(next(iter(self._yt_audio_opts), "—"))
         self._on_yt_type_change(self.yt_type.get())
-        self._yt_opts_frame.pack(fill="x", padx=12, pady=4)
-        self.yt_btn.configure(state="normal")
+        self._yt_opts_frame.pack(fill="x", padx=12, pady=4, before=self.yt_btn)
+        self._refresh_cut()
         self._set_status(self.yt_status, "✓  Análise concluída. Configure e clique em Baixar.", "#2ecc71")
 
     def _analyze_error(self, msg):
+        self.yt_url.configure(state="normal")
         self.yt_analyze_btn.configure(state="normal", text="🔍  Analisar")
         self._set_status(self.yt_status, f"✗  {msg[:80]}", "#e74c3c")
         self._log(self.yt_log, f"ERRO na análise: {msg}\n")
 
     def _on_yt_type_change(self, value):
+        previous_audio = self.yt_aq.get()
         ff = has_ffmpeg()
         is_pl = getattr(self, "_yt_is_playlist", False)
 
@@ -591,7 +799,7 @@ class DownloaderApp(ctk.CTk):
 
         if value == "Só Áudio":
             self.yt_aq.configure(values=audio_labels)
-            self.yt_aq.set(audio_labels[0])
+            self.yt_aq.set(previous_audio if previous_audio in audio_labels else audio_labels[0])
             self._aq_frame.pack(side="left")
 
         elif value == "Só Vídeo":
@@ -615,8 +823,10 @@ class DownloaderApp(ctk.CTk):
 
             if ff:
                 self.yt_aq.configure(values=audio_labels)
-                self.yt_aq.set(audio_labels[0])
+                self.yt_aq.set(previous_audio if previous_audio in audio_labels else audio_labels[0])
                 self._aq_frame.pack(side="left")
+
+        self._refresh_subtitles()
 
     # ── Download ───────────────────────────────────────────────────────────
 
@@ -624,16 +834,36 @@ class DownloaderApp(ctk.CTk):
         url = self.yt_url.get().strip()
         if not url:
             return
+        if url != self._yt_analyzed_url:
+            self._set_status(self.yt_status, "O link mudou. Clique em Analisar novamente.", "orange")
+            return
+        selection = None
+        if self.cut_enabled.get():
+            try:
+                if self._yt_is_playlist:
+                    raise ValueError("Recorte disponível somente para vídeos individuais.")
+                selection = validate_range(self.cut_start.get(), self.cut_end.get(), self._cut_duration)
+            except ValueError as exc:
+                self._set_status(self.yt_status, str(exc), "orange")
+                return
+        subtitle = None
+        if self.sub_enabled.get():
+            subtitle = dict(self._sub_choices[self.sub_lang.get()], size=self.sub_size.get(), color=self.sub_color.get())
+        settings = (self.yt_type.get(), self.yt_vq.get(), self.yt_aq.get(), selection, subtitle)
+        self._yt_busy = True
+        self.yt_url.configure(state="disabled")
+        self.yt_type.configure(state="disabled")
+        self.yt_vq.configure(state="disabled")
+        self.yt_aq.configure(state="disabled")
+        self._refresh_cut()
         self.yt_btn.configure(state="disabled", text="Baixando…")
         self.yt_analyze_btn.configure(state="disabled")
         self.yt_bar.set(0)
         self._set_status(self.yt_status, "Iniciando download…")
-        threading.Thread(target=self._dl_yt, args=(url,), daemon=True).start()
+        threading.Thread(target=self._dl_yt, args=(url, settings), daemon=True).start()
 
-    def _dl_yt(self, url):
-        dl_type  = self.yt_type.get()
-        vq_label = self.yt_vq.get()
-        aq_label = self.yt_aq.get()
+    def _dl_yt(self, url, settings):
+        dl_type, vq_label, aq_label, selection, subtitle = settings
         ff       = has_ffmpeg()
 
         def progress_hook(d):
@@ -658,6 +888,18 @@ class DownloaderApp(ctk.CTk):
                                    "%(playlist_title)s", "%(playlist_index)02d - %(title)s.%(ext)s")
         else:
             outtmpl = os.path.join(DOWNLOADS_FOLDER, "%(title)s.%(ext)s")
+
+        if selection:
+            a,b = selection
+            suffix = f" [trecho {clock(a).replace(':','-')}_{clock(b).replace(':','-')}]"
+            outtmpl = os.path.join(DOWNLOADS_FOLDER, "%(title)s" + suffix + ".%(ext)s")
+
+        if not is_pl and dl_type != "Só Vídeo":
+            outtmpl = outtmpl.replace('.%(ext)s', audio_suffix((self._yt_info or {}).get('formats', []),
+                self._yt_audio_opts.get(aq_label)) + '.%(ext)s')
+        if subtitle:
+            suffix = f" [legenda {subtitle['code']} {subtitle['color']} {subtitle['size']}]"
+            outtmpl = outtmpl.replace('.%(ext)s', suffix + '.%(ext)s')
 
         # Contador de vídeos para playlists
         _pl_counter = [0]
@@ -699,7 +941,8 @@ class DownloaderApp(ctk.CTk):
                 if ff:
                     kbps = self._yt_audio_opts.get(aq_label) or aq_label.split()[0] if is_pl \
                            else (self._yt_audio_opts.get(aq_label) or "0")
-                    ydl_opts["format"] = "bestaudio/best"
+                    ydl_opts["format"] = audio_selector(None if is_pl else self._yt_audio_opts.get(aq_label))
+                    ydl_opts["writethumbnail"] = True
                     ydl_opts["postprocessors"] = [{
                         "key": "FFmpegExtractAudio",
                         "preferredcodec": "mp3",
@@ -729,8 +972,7 @@ class DownloaderApp(ctk.CTk):
                     else:
                         video_fid = getattr(self, "_yt_video_opts", {}).get(vq_label)
                         audio_fid = getattr(self, "_yt_audio_opts", {}).get(aq_label)
-                        ydl_opts["format"] = f"{video_fid}+{audio_fid}" if (video_fid and audio_fid) \
-                                             else "bestvideo+bestaudio/best"
+                        ydl_opts["format"] = combined_selector(video_fid, audio_fid)
                     ydl_opts["merge_output_format"] = "mp4"
                 else:
                     combo_fid = getattr(self, "_yt_combo_opts", {}).get(vq_label)
@@ -746,7 +988,29 @@ class DownloaderApp(ctk.CTk):
                     if not ff:
                         self._log(self.yt_log, "⚠  Sem ffmpeg — usando formato combinado disponível.\n")
 
+            if subtitle:
+                ydl_opts.update(writesubtitles=not subtitle['automatic'],
+                    writeautomaticsub=subtitle['automatic'], subtitleslangs=[subtitle['code']],
+                    subtitlesformat='json3/vtt/srt', overwrites=True)
+            extract_options = None
+            if selection:
+                ydl_opts["overwrites"] = True
+                self._log(self.yt_log, "Baixando o arquivo completo antes do recorte preciso.")
+                if dl_type == "Só Áudio":
+                    extract_options = ydl_opts.pop("postprocessors")[0]
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                if selection or subtitle:
+                    def cut_log(message):
+                        self._log(self.yt_log, message)
+                        self._set_status(self.yt_status, "Gravando legendas…" if subtitle else "Recortando trecho…")
+                    ydl.add_post_processor(ClipMediaPP(ydl, *(selection or (0, None)),
+                        ffmpeg=get_ffmpeg_path(), audio_only=dl_type == "Só Áudio", log=cut_log, subtitles=subtitle))
+                    if extract_options:
+                        ydl.add_post_processor(FFmpegExtractAudioPP(ydl, preferredcodec="mp3",
+                            preferredquality=extract_options["preferredquality"]))
+                if dl_type == "Só Áudio" and ff:
+                    ydl.add_post_processor(MusicMetadataPP(
+                        ydl, log=lambda message: self._log(self.yt_log, message)))
                 ydl.download([url])
 
             if is_pl:
@@ -762,8 +1026,7 @@ class DownloaderApp(ctk.CTk):
             self._set_status(self.yt_status, f"✗  {str(exc)[:80]}", "#e74c3c")
             self._log(self.yt_log, f"ERRO: {exc}\n")
         finally:
-            self.yt_btn.configure(state="normal", text="⬇   Baixar")
-            self.yt_analyze_btn.configure(state="normal")
+            self.after(0, self._finish_yt_download)
 
     # ── YouTube Music tab ──────────────────────────────────────────────────
 
@@ -784,6 +1047,7 @@ class DownloaderApp(ctk.CTk):
             url_row, height=36,
             placeholder_text="https://music.youtube.com/watch?v=...  ou  /playlist?list=...",
         )
+        self._install_paste_menu(self.ytm_url)
         self.ytm_url.pack(side="left", fill="x", expand=True, padx=(0, 8))
         self.ytm_url.bind("<Return>", lambda _: self._start_ytm_analyze())
 
@@ -943,7 +1207,7 @@ class DownloaderApp(ctk.CTk):
                 self.after(0, lambda: self._update_ytm_ui(title, uploader, duration))
 
         except Exception as exc:
-            self.after(0, lambda: self._ytm_analyze_error(str(exc)))
+            self.after(0, lambda message=str(exc): self._ytm_analyze_error(message))
 
     def _update_ytm_ui(self, title, uploader, duration, count=0):
         self.ytm_analyze_btn.configure(state="normal", text="🔍  Analisar")
@@ -1056,10 +1320,6 @@ class DownloaderApp(ctk.CTk):
                 "preferredcodec": codec,
                 "preferredquality": bitrate if fmt == "MP3" else "0",
             })
-            if do_meta:
-                postprocessors.append({"key": "FFmpegMetadata", "add_metadata": True})
-            if do_thumb:
-                postprocessors.append({"key": "EmbedThumbnail", "already_have_thumbnail": False})
         else:
             self._log(self.ytm_log, "⚠  Sem ffmpeg — baixando no formato original (sem conversão).\n")
 
@@ -1068,6 +1328,10 @@ class DownloaderApp(ctk.CTk):
 
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                if ff and (do_meta or do_thumb):
+                    ydl.add_post_processor(MusicMetadataPP(
+                        ydl, metadata=bool(do_meta), artwork=bool(do_thumb),
+                        log=lambda message: self._log(self.ytm_log, message)))
                 ydl.download([url])
             if is_pl:
                 self._set_status(self.ytm_status, f"✓  {_pl_counter[0]} faixa(s) baixada(s)!", "#2ecc71")
@@ -1097,6 +1361,7 @@ class DownloaderApp(ctk.CTk):
             tab, width=720, height=36,
             placeholder_text="https://open.spotify.com/track/...  ou  /album/...  ou  /playlist/...",
         )
+        self._install_paste_menu(self.sp_url)
         self.sp_url.pack(padx=12, pady=(0, 8))
 
         row = ctk.CTkFrame(tab, fg_color="transparent")
@@ -1157,6 +1422,7 @@ class DownloaderApp(ctk.CTk):
             proc = subprocess.Popen(
                 cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                 text=True, encoding="utf-8", errors="replace", env=env,
+                creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
             )
             for line in proc.stdout:
                 line = line.rstrip()

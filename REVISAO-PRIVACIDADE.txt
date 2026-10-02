@@ -1,0 +1,27 @@
+REVISÃO DOS ARQUIVOS DE FONTES — 02/10/2026
+
+O ZIP foi montado com uma lista explícita de arquivos de fonte,
+testes, configuração de compilação, documentação e licença.
+
+Não foram encontrados nos arquivos incluídos:
+- Caminhos do perfil pessoal ou identificadores do ambiente de trabalho.
+- E-mails, identificadores UUID de sessão ou dados de contas pessoais.
+- Tokens GitHub/API, senhas, chaves privadas ou URLs com credenciais.
+
+Não foram incluídos: .git, ambientes Python, bibliotecas de terceiros,
+executáveis, downloads, logs, cookies, caches, configurações de execução,
+resultados de consultas ao YouTube/Spotify ou dados de testes gerados.
+
+Foram preservados intencionalmente:
+- Nome e URL públicos do autor original na licença e na atribuição.
+- Nomes de projetos, links oficiais de dependências e versões de pacotes.
+- Nomes fictícios nos testes para verificar acentos e metadados.
+
+Verificação: leitura dos arquivos selecionados, busca por padrões de
+dados sensíveis e revisão do conteúdo final do ZIP. A verificação cobre
+somente os arquivos incluídos; não é uma auditoria das dependências que
+serão obtidas durante a compilação.
+
+Quatorze testes passaram na estrutura de fontes preparada para este ZIP.
+O novo script de compilação teve sua sintaxe conferida; o download e a
+compilação completos por esse script não foram repetidos nesta revisão.

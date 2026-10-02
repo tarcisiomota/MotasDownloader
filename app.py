@@ -4,8 +4,10 @@ import threading
 import yt_dlp
 import subprocess
 import os
+import re
 import sys
 import shutil
+import importlib.util
 import urllib.request
 import zipfile
 import tempfile
@@ -89,6 +91,40 @@ def get_spotdl_path():
     return [sys.executable, "-m", "spotdl"]
 
 
+def get_gallery_dl_path():
+    if getattr(sys, "frozen", False):
+        candidate = os.path.join(sys._MEIPASS, "gallery-dl.exe")
+        if os.path.exists(candidate):
+            return [candidate]
+    return [sys.executable, "-m", "gallery_dl"]
+
+
+def has_gallery_dl():
+    if getattr(sys, "frozen", False):
+        return os.path.exists(os.path.join(sys._MEIPASS, "gallery-dl.exe"))
+    return importlib.util.find_spec("gallery_dl") is not None
+
+
+# Plataformas de redes sociais suportadas no spike. Cada entrada:
+# (rótulo, cor de destaque, lista de domínios que identificam o link).
+SOCIAL_PLATFORMS = [
+    ("TikTok",    "#ff0050", ("tiktok.com", "vm.tiktok.com", "vt.tiktok.com")),
+    ("Twitter/X", "#1d9bf0", ("twitter.com", "x.com", "t.co")),
+    ("Instagram", "#e4405f", ("instagram.com", "instagr.am")),
+    ("Facebook",  "#1877f2", ("facebook.com", "fb.watch", "fb.com", "m.facebook.com")),
+]
+
+
+def detect_social_platform(url):
+    """Retorna (rótulo, cor) da plataforma do link, ou (None, None)."""
+    host = re.sub(r"^https?://", "", url.strip().lower()).split("/")[0]
+    host = host.split("@")[-1].split(":")[0]  # ignora user:pass@ e :porta
+    for label, color, domains in SOCIAL_PLATFORMS:
+        if any(host == d or host.endswith("." + d) for d in domains):
+            return label, color
+    return None, None
+
+
 class DownloaderApp(ctk.CTk):
     def __init__(self):
         super().__init__()
@@ -142,6 +178,7 @@ class DownloaderApp(ctk.CTk):
         self.tabview.add("  YouTube  ")
         self.tabview.add("  YT Music  ")
         self.tabview.add("  Spotify  ")
+        self.tabview.add("  Redes Sociais  ")
 
         self._yt_formats     = {}    # format_id -> format dict (from yt-dlp)
         self._yt_info        = None  # full info dict
@@ -150,6 +187,7 @@ class DownloaderApp(ctk.CTk):
         self._build_youtube_tab()
         self._build_ytmusic_tab()
         self._build_spotify_tab()
+        self._build_social_tab()
 
     # ── Theme ──────────────────────────────────────────────────────────────
 
@@ -261,7 +299,7 @@ class DownloaderApp(ctk.CTk):
         # ── Cabeçalho ──────────────────────────────────────────────────────
         ctk.CTkLabel(scroll, text="Mota's Downloader",
                      font=ctk.CTkFont(size=18, weight="bold")).pack(pady=(4, 2))
-        ctk.CTkLabel(scroll, text="Baixe vídeos e áudios do YouTube, YouTube Music e Spotify.",
+        ctk.CTkLabel(scroll, text="Baixe vídeos e áudios do YouTube, YouTube Music, Spotify e redes sociais.",
                      font=ctk.CTkFont(size=12), text_color="#888888").pack(pady=(0, 8))
 
         # ── YouTube ────────────────────────────────────────────────────────
@@ -311,6 +349,18 @@ class DownloaderApp(ctk.CTk):
         line("")
         line("ℹ  O Spotify não permite download direto. O app usa o spotdl para")
         line("   buscar cada faixa no YouTube Music e baixar com metadados completos.")
+
+        # ── Redes Sociais ───────────────────────────────────────────────────
+        section("🌐  Redes Sociais", "#8e44ad")
+        line("Baixa de TikTok, Twitter/X, Instagram e Facebook.")
+        line("1. Cole o link do post, vídeo ou perfil. O app detecta a plataforma.")
+        line("2. Escolha o Tipo:")
+        line("• Vídeo → usa o yt-dlp; selecione a qualidade (Melhor, 1080p…)", 1)
+        line("• Fotos / galeria → usa o gallery-dl para imagens e carrosséis", 1)
+        line("3. Clique em ⬇ Baixar. As fotos vão para Downloads/Redes Sociais/.")
+        line("")
+        line("ℹ  Conteúdo privado ou restrito pode exigir login (cookies).")
+        line("   Fotos exigem o gallery-dl instalado:  pip install gallery-dl")
 
         # ── Geral ─────────────────────────────────────────────────────────
         section("⚙  Geral", "#888888")
@@ -1446,6 +1496,195 @@ class DownloaderApp(ctk.CTk):
             self.sp_bar.stop()
             self.sp_bar.set(0)
             self.sp_btn.configure(state="normal", text="⬇   Baixar")
+
+    # ── Redes Sociais tab (spike) ────────────────────────────────────────────
+
+    def _build_social_tab(self):
+        tab = self.tabview.tab("  Redes Sociais  ")
+
+        ctk.CTkLabel(tab, text="URL da rede social:", font=ctk.CTkFont(size=12)).pack(
+            anchor="w", padx=12, pady=(12, 2)
+        )
+        ctk.CTkLabel(tab,
+            text="  Suporta:  ▶ TikTok  •  🐦 Twitter/X  •  📸 Instagram  •  👍 Facebook",
+            font=ctk.CTkFont(size=11), text_color="#888888").pack(anchor="w", padx=12, pady=(0, 4))
+
+        self.social_url = ctk.CTkEntry(
+            tab, width=720, height=36,
+            placeholder_text="Cole o link do post, vídeo ou perfil…",
+        )
+        self._install_paste_menu(self.social_url)
+        self.social_url.pack(padx=12, pady=(0, 4))
+        self.social_url.bind("<KeyRelease>", self._on_social_url_change)
+
+        # Badge que identifica a plataforma do link colado
+        self.social_platform_lbl = ctk.CTkLabel(
+            tab, text="Cole um link para detectar a plataforma.",
+            font=ctk.CTkFont(size=11, weight="bold"), text_color="#888888")
+        self.social_platform_lbl.pack(anchor="w", padx=14, pady=(0, 6))
+
+        row = ctk.CTkFrame(tab, fg_color="transparent")
+        row.pack(fill="x", padx=12, pady=4)
+        ctk.CTkLabel(row, text="Tipo:").pack(side="left", padx=(0, 8))
+        self.social_mode = ctk.CTkOptionMenu(
+            row, values=["Vídeo", "Fotos / galeria"], width=160,
+            command=lambda _=None: self._on_social_url_change())
+        self.social_mode.set("Vídeo")
+        self.social_mode.pack(side="left", padx=(0, 16))
+
+        self.social_vq_lbl = ctk.CTkLabel(row, text="Qualidade:")
+        self.social_vq_lbl.pack(side="left", padx=(0, 8))
+        self.social_vq = ctk.CTkOptionMenu(
+            row, values=["Melhor", "1080p", "720p", "480p"], width=120)
+        self.social_vq.set("Melhor")
+        self.social_vq.pack(side="left")
+
+        self.social_btn = ctk.CTkButton(
+            tab, text="⬇   Baixar", width=720, height=40,
+            font=ctk.CTkFont(size=14, weight="bold"),
+            command=self._start_social,
+        )
+        self.social_btn.pack(padx=12, pady=10)
+
+        self.social_bar = ctk.CTkProgressBar(tab, width=720, mode="indeterminate")
+        self.social_bar.pack(padx=12, pady=(0, 4))
+
+        self.social_status = ctk.CTkLabel(tab, text="Pronto.", text_color="#888888",
+                                          font=ctk.CTkFont(size=11))
+        self.social_status.pack(anchor="w", padx=14)
+
+        self._build_dest_row(tab)
+
+        self.social_log = ctk.CTkTextbox(tab, width=720, height=230,
+                                          font=ctk.CTkFont(size=10, family="Consolas"))
+        self.social_log.pack(padx=12, pady=6)
+        self.social_log.configure(state="disabled")
+
+    def _on_social_url_change(self, _event=None):
+        url = self.social_url.get().strip()
+        # Qualidade só faz sentido para vídeo
+        is_video = self.social_mode.get() == "Vídeo"
+        state = "normal" if is_video else "disabled"
+        self.social_vq.configure(state=state)
+        self.social_vq_lbl.configure(text_color=self._fg_text if is_video else INACTIVE_TEXT)
+
+        if not url:
+            self.social_platform_lbl.configure(
+                text="Cole um link para detectar a plataforma.", text_color="#888888")
+            return
+        label, color = detect_social_platform(url)
+        if label:
+            self.social_platform_lbl.configure(text=f"●  {label} detectado", text_color=color)
+        else:
+            self.social_platform_lbl.configure(
+                text="⚠  Plataforma não reconhecida — o download pode não funcionar.",
+                text_color="#e67e22")
+
+    def _start_social(self):
+        url = self.social_url.get().strip()
+        if not url:
+            self._set_status(self.social_status, "⚠  Cole um link válido.", "orange")
+            return
+        mode = self.social_mode.get()
+        if mode.startswith("Fotos") and not has_gallery_dl():
+            self._set_status(self.social_status, "✗  gallery-dl não encontrado.", "#e74c3c")
+            self._log(self.social_log, "Para baixar fotos/galerias, instale o gallery-dl:\n"
+                                       "   pip install gallery-dl\n")
+            return
+        settings = (mode, self.social_vq.get())
+        self.social_btn.configure(state="disabled", text="Baixando…")
+        self.social_bar.start()
+        self._set_status(self.social_status, "Iniciando…")
+        threading.Thread(target=self._dl_social, args=(url, settings), daemon=True).start()
+
+    def _dl_social(self, url, settings):
+        mode, vq = settings
+        label, _ = detect_social_platform(url)
+        try:
+            if mode.startswith("Fotos"):
+                self._dl_social_photos(url)
+            else:
+                self._dl_social_video(url, vq, label)
+        except Exception as exc:
+            self._set_status(self.social_status, f"✗  {str(exc)[:80]}", "#e74c3c")
+            self._log(self.social_log, f"ERRO: {exc}\n")
+        finally:
+            self.social_bar.stop()
+            self.social_bar.set(0)
+            self.social_btn.configure(state="normal", text="⬇   Baixar")
+
+    def _dl_social_video(self, url, vq, label):
+        fmt_map = {
+            "Melhor": "bestvideo*+bestaudio/best",
+            "1080p":  "bestvideo[height<=1080]+bestaudio/best[height<=1080]/best",
+            "720p":   "bestvideo[height<=720]+bestaudio/best[height<=720]/best",
+            "480p":   "bestvideo[height<=480]+bestaudio/best[height<=480]/best",
+        }
+        outtmpl = os.path.join(DOWNLOADS_FOLDER, "%(uploader,uploader_id|rede)s - %(title).60B [%(id)s].%(ext)s")
+
+        def progress_hook(d):
+            if d["status"] == "downloading":
+                total = d.get("total_bytes") or d.get("total_bytes_estimate", 0)
+                if total:
+                    self.social_bar.configure(mode="determinate")
+                    self.social_bar.set(d.get("downloaded_bytes", 0) / total)
+                pct = d.get("_percent_str", "").strip()
+                spd = d.get("_speed_str", "").strip()
+                self._set_status(self.social_status, f"Baixando {pct}  {spd}")
+            elif d["status"] == "finished":
+                self.social_bar.set(1)
+                self._log(self.social_log, f"✓  {os.path.basename(d['filename'])}")
+
+        ydl_opts = {
+            "outtmpl": outtmpl,
+            "format": fmt_map.get(vq, "best"),
+            "merge_output_format": "mp4",
+            "progress_hooks": [progress_hook],
+            "noplaylist": False,
+            "quiet": True,
+            "no_warnings": True,
+        }
+        ffp = get_ffmpeg_path()
+        if ffp:
+            ydl_opts["ffmpeg_location"] = os.path.dirname(ffp)
+
+        self._log(self.social_log, f"Baixando vídeo de {label or 'link'}: {url}\n")
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            ydl.download([url])
+        self._set_status(self.social_status, "✓  Download concluído!", "#2ecc71")
+        self._log(self.social_log, f"Salvo em: {DOWNLOADS_FOLDER}\n")
+
+    def _dl_social_photos(self, url):
+        dest = os.path.join(DOWNLOADS_FOLDER, "Redes Sociais")
+        cmd = get_gallery_dl_path() + ["--dest", dest, url]
+
+        env = os.environ.copy()
+        bin_d = _bin_dir()
+        if os.path.isdir(bin_d):
+            env["PATH"] = bin_d + os.pathsep + env.get("PATH", "")
+
+        self._log(self.social_log, f"Baixando fotos/galeria: {url}\n")
+        proc = subprocess.Popen(
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            text=True, encoding="utf-8", errors="replace", env=env,
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+        )
+        count = 0
+        for line in proc.stdout:
+            line = line.rstrip()
+            if not line:
+                continue
+            self._log(self.social_log, line)
+            # gallery-dl imprime o caminho de cada arquivo salvo (começa com ./ ou a pasta)
+            if line.lstrip().startswith(("/", ".", dest)) or re.search(r"\.(jpe?g|png|webp|mp4|gif)$", line, re.I):
+                count += 1
+                self._set_status(self.social_status, f"Baixados {count} arquivo(s)…")
+        proc.wait()
+        if proc.returncode == 0:
+            self._set_status(self.social_status, f"✓  Concluído — {count} arquivo(s).", "#2ecc71")
+            self._log(self.social_log, f"\nSalvo em: {dest}\n")
+        else:
+            self._set_status(self.social_status, "✗  Erro — veja o log.", "#e74c3c")
 
 
 if __name__ == "__main__":

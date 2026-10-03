@@ -2,7 +2,8 @@ from PyInstaller.utils.hooks import collect_all, collect_data_files, copy_metada
 from pathlib import Path
 
 datas, binaries, hiddenimports = [], [], []
-for package in ('customtkinter', 'yt_dlp', 'yt_dlp_ejs', 'spotdl', 'pykakasi', 'rapidfuzz'):
+for package in ('customtkinter', 'yt_dlp', 'yt_dlp_ejs', 'spotdl', 'pykakasi', 'rapidfuzz', 'vlc',
+                'moviepy', 'pydub'):
     data, binary, hidden = collect_all(package)
     datas += data
     binaries += binary

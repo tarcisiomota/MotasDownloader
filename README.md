@@ -5,10 +5,14 @@ Aplicativo Windows para YouTube, YouTube Music e Spotify, com metadados musicais
 ## Funcionalidades
 
 - Vídeo, somente vídeo ou somente áudio; suporte a playlists.
+- Downloads de YouTube, YouTube Music, Spotify e redes sociais (TikTok, Twitter/X, Instagram, Facebook).
 - Conversão para MP3, M4A, WAV e FLAC.
 - Tags musicais e imagem do próprio link. Prioridade para campos musicais; depois, campos explícitos da descrição. Sem informação confiável, artista, álbum e ano ficam vazios.
 - MP3/WAV usam ID3v2.3; M4A/FLAC usam seus formatos nativos.
 - Spotify usa spotDL para localizar o áudio no YouTube/YouTube Music; não inclui o aplicativo Spotify.
+- **Biblioteca**: player de áudio e vídeo embutido (libVLC) com lista e playlist.
+- **Editar Vídeo**: editor em linha do tempo (timeline) com trilhas de vídeo/áudio, ferramenta de corte (razor), playhead com preview por quadro (Program Monitor) e efeitos por clipe (velocidade, reverter, girar, espelhar, preto e branco, inverter cores, brilho/contraste, fade e texto/legenda). Exporta a sequência em MP4.
+- Seletor de pasta de download com a escolha salva entre sessões.
 - Versão compilada guarda downloads e dados na própria pasta.
 
 ## Novidades até a v4.3
@@ -19,6 +23,13 @@ Aplicativo Windows para YouTube, YouTube Music e Spotify, com metadados musicais
 - Idioma, qualidade e codec no seletor de áudio; prioridade para a faixa original.
 - Temas claro/escuro e menu Colar nas caixas de URL.
 - Recorte e legendas recodificam o vídeo para MP4 H.264; o arquivo inteiro é baixado antes.
+
+## Novidades do pós-v4.3
+
+- Aba **Biblioteca** com player de áudio/vídeo (libVLC baixado sob demanda).
+- Aba **Editar Vídeo** no estilo editor profissional: timeline multitrack, corte, playhead com Program Monitor (preview por quadro) e efeitos aplicados por clipe via MoviePy; exportação em MP4.
+- Seletor de pasta de download (botão "Alterar…") com persistência.
+- Máscara de tempo nos campos de recorte (digite só números: 012345 → 01:23:45).
 
 ## Compilar no Windows
 
